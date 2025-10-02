@@ -131,7 +131,7 @@ def register_mpesa_urls():
         response = requests.get(token_url, auth=HTTPBasicAuth(MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET))
         access_token = response.json().get('access_token')
         if not access_token:
-            print('Failed to get access token:', response.text)
+            print('Failed to get access token:', response.text) 
             return
 
         # Register URLs (PRODUCTION)
@@ -1089,5 +1089,5 @@ def show_results(flow):
                          index_number=index_number)
 
 # --- Main Application Entry Point ---
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=8080)
+if __name__ == "__main__":
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
