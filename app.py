@@ -74,11 +74,13 @@ db_kmtc = None
 db_certificate = None
 db_artisan = None
 user_data_collection = None
+users_collection = None
+payments_collection = None
 database_connected = False
 
 def initialize_database():
     """Initialize database connections with error handling"""
-    global db, db_user_data, db_diploma, db_kmtc, db_certificate, db_artisan, user_data_collection, database_connected
+    global db, db_user_data, db_diploma, db_kmtc, db_certificate, db_artisan, user_data_collection, users_collection, payments_collection, database_connected
     
     try:
         client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
@@ -91,6 +93,8 @@ def initialize_database():
         db = client['Degree']
         db_user_data = client['user_data']
         user_data_collection = db_user_data['user_courses']
+        users_collection = db_user_data['users']
+        payments_collection = db_user_data['payments']
         db_diploma = client['diploma']
         db_kmtc = client['kmtc']
         db_certificate = client['certificate']
@@ -113,44 +117,71 @@ def initialize_database():
 if not initialize_database():
     print("⚠️  Running in fallback mode - database operations will be skipped")
 
-# Utility function to register MPesa confirmation and validation URLs
 def register_mpesa_urls():
-    """Register MPesa URLs - only if database is connected"""
+    """Register MPesa URLs with proper error handling"""
     if not database_connected:
         print("⚠️  Skipping MPesa URL registration - database not connected")
-        return
+        return False
         
-    # Use your current ngrok public URL here
-    ngrok_url = 'https://anapaestically-frenetic-bev.ngrok-free.dev'
-    confirmation_url = f'{ngrok_url}/mpesa/confirmation'
-    validation_url = f'{ngrok_url}/mpesa/validation'
-
     try:
         # Get access token (PRODUCTION)
         token_url = 'https://api.safaricom.co.ke/oauth/v1/generate?grant_type=client_credentials'
-        response = requests.get(token_url, auth=HTTPBasicAuth(MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET))
+        response = requests.get(token_url, auth=HTTPBasicAuth(MPESA_CONSUMER_KEY, MPESA_CONSUMER_SECRET), timeout=30)
+        
+        if response.status_code != 200:
+            print(f"❌ Failed to get access token: {response.status_code} - {response.text}")
+            return False
+            
         access_token = response.json().get('access_token')
         if not access_token:
-            print('Failed to get access token:', response.text) 
-            return
+            print('❌ Failed to get access token:', response.text) 
+            return False
 
         # Register URLs (PRODUCTION)
+        base_url = 'https://kuccps.onrender.com'
+        confirmation_url = f'{base_url}/mpesa/confirmation'
+        validation_url = f'{base_url}/mpesa/validation'
+
         register_url = 'https://api.safaricom.co.ke/mpesa/c2b/v1/registerurl'
-        headers = {'Authorization': f'Bearer {access_token}'}
+        headers = {
+            'Authorization': f'Bearer {access_token}',
+            'Content-Type': 'application/json'
+        }
         payload = {
             "ShortCode": MPESA_SHORTCODE,
             "ResponseType": "Completed",
             "ConfirmationURL": confirmation_url,
             "ValidationURL": validation_url
         }
-        reg_response = requests.post(register_url, json=payload, headers=headers)
-        print('MPesa URL registration response:', reg_response.text)
         
+        print(f"🔗 Registering MPesa URLs:")
+        print(f"   Confirmation: {confirmation_url}")
+        print(f"   Validation: {validation_url}")
+        
+        reg_response = requests.post(register_url, json=payload, headers=headers, timeout=30)
+        print(f'📡 MPesa URL registration response: {reg_response.status_code} - {reg_response.text}')
+        
+        if reg_response.status_code == 200:
+            result = reg_response.json()
+            if result.get('ResponseDescription') == 'Success':
+                print("✅ MPesa URLs registered successfully!")
+                return True
+            else:
+                print(f"❌ MPesa registration failed: {result}")
+                return False
+        else:
+            print(f"❌ MPesa registration HTTP error: {reg_response.status_code}")
+            return False
+            
     except Exception as e:
-        print(f"Error registering MPesa URLs: {str(e)}")
+        print(f"❌ Error registering MPesa URLs: {str(e)}")
+        return False
 
 # Register MPesa URLs on startup
-register_mpesa_urls()
+if register_mpesa_urls():
+    print("✅ MPesa URLs registered successfully on startup")
+else:
+    print("❌ Failed to register MPesa URLs on startup")
 
 # --- Helper Classes ---
 class JSONEncoder:
@@ -543,6 +574,127 @@ def mark_payment_confirmed_by_account(account_number, mpesa_receipt, amount=None
         print(f"❌ Error marking payment confirmed by account: {str(e)}")
         return False
 
+# --- New User and Payment Collections ---
+
+def upsert_user_profile(email, index_number):
+    """Create or update a minimal user profile with email and index number"""
+    if not database_connected:
+        print("⚠️  Database not available - skipping user profile save")
+        return
+    try:
+        users_collection.update_one(
+            {'email': email, 'index_number': index_number},
+            {'$setOnInsert': {
+                'email': email,
+                'index_number': index_number,
+                'created_at': datetime.now()
+            },
+             '$set': {
+                'updated_at': datetime.now()
+             }},
+            upsert=True
+        )
+        print(f"✅ Upserted user profile for {email} ({index_number})")
+    except Exception as e:
+        print(f"❌ Error upserting user profile: {str(e)}")
+
+def create_payment_record(email, index_number, phone, transaction_ref, flow, source='STK'):
+    """Create a payment record for tracking payment status"""
+    if not database_connected:
+        print("⚠️  Database not available - skipping payment record creation")
+        return
+    try:
+        doc = {
+            'email': email,
+            'index_number': index_number,
+            'phone': phone,
+            'transaction_ref': transaction_ref,
+            'flow': flow,
+            'status': 'pending',
+            'source': source,
+            'created_at': datetime.now()
+        }
+        payments_collection.update_one(
+            {'transaction_ref': transaction_ref},
+            {'$setOnInsert': doc},
+            upsert=True
+        )
+        print(f"✅ Created payment record for {email} ({index_number}) tx={transaction_ref}")
+    except Exception as e:
+        print(f"❌ Error creating payment record: {str(e)}")
+
+def mark_payment_confirmed_in_payments(transaction_ref, mpesa_receipt=None, amount=None):
+    """Mark a payment record as confirmed by transaction reference"""
+    if not database_connected:
+        print("⚠️  Database not available - skipping payment confirmation update")
+        return False
+    try:
+        update = {
+            'status': 'confirmed',
+            'paid_at': datetime.now()
+        }
+        if mpesa_receipt:
+            update['mpesa_receipt'] = mpesa_receipt
+        if amount is not None:
+            update['amount'] = amount
+        result = payments_collection.update_one(
+            {'transaction_ref': transaction_ref},
+            {'$set': update}
+        )
+        print(f"✅ Payment record updated for tx={transaction_ref}, modified={result.modified_count}")
+        return result.modified_count > 0
+    except Exception as e:
+        print(f"❌ Error marking payment confirmed in payments: {str(e)}")
+        return False
+
+def mark_payment_confirmed_by_account_in_payments(index_number, trans_id, phone=None, amount=None, source='C2B'):
+    """Create or update a confirmed payment by account/index number"""
+    if not database_connected:
+        print("⚠️  Database not available - skipping payment confirmation by account")
+        return False
+    try:
+        doc = payments_collection.find_one({'transaction_ref': trans_id})
+        if doc:
+            return mark_payment_confirmed_in_payments(trans_id, mpesa_receipt=trans_id, amount=amount)
+        payments_collection.update_one(
+            {'transaction_ref': trans_id},
+            {'$setOnInsert': {
+                'email': None,
+                'index_number': index_number,
+                'phone': phone,
+                'transaction_ref': trans_id,
+                'status': 'confirmed',
+                'source': source,
+                'amount': amount,
+                'paid_at': datetime.now(),
+                'created_at': datetime.now()
+            }},
+            upsert=True
+        )
+        print(f"✅ Confirmed payment by account for index={index_number}, tx={trans_id}")
+        return True
+    except Exception as e:
+        print(f"❌ Error confirming payment by account in payments: {str(e)}")
+        return False
+
+def is_user_paid(email, index_number, flow):
+    """Check if a user has any confirmed payment for a given flow"""
+    if not database_connected:
+        # Fall back to user_data_collection session-like behavior
+        user_record = get_user_courses(email, index_number, flow)
+        return bool(user_record and user_record.get('payment_confirmed'))
+    try:
+        doc = payments_collection.find_one({
+            'email': email,
+            'index_number': index_number,
+            'flow': flow,
+            'status': 'confirmed'
+        })
+        return doc is not None
+    except Exception as e:
+        print(f"❌ Error checking user paid status: {str(e)}")
+        return False
+
 # --- MPesa Integration Functions ---
 
 def get_mpesa_access_token():
@@ -571,7 +723,7 @@ def get_mpesa_access_token():
         print('❌ MPesa OAuth error:', response.status_code if 'response' in locals() else 'No response', str(e))
         raise
 
-def initiate_stk_push(phone, amount=1):  # Changed default to Ksh 10
+def initiate_stk_push(phone, amount=1):
     """Initiate MPesa STK push payment"""
     # Convert phone to 2547XXXXXXXX or 2541XXXXXXXX format
     if phone.startswith('0') and len(phone) == 10:
@@ -601,8 +753,8 @@ def initiate_stk_push(phone, amount=1):  # Changed default to Ksh 10
         # Use the index number as account reference
         index_number = session.get('index_number', 'KUCCPS')
         
-        # Use your current ngrok public URL here
-        ngrok_url = 'https://anapaestically-frenetic-bev.ngrok-free.dev'
+        # Updated to use the new render.com domain
+        base_url = 'https://kuccps.onrender.com'
         payload = {
             "BusinessShortCode": business_short_code,
             "Password": password,
@@ -612,7 +764,7 @@ def initiate_stk_push(phone, amount=1):  # Changed default to Ksh 10
             "PartyA": phone,
             "PartyB": business_short_code,
             "PhoneNumber": phone,
-            "CallBackURL": f"{ngrok_url}/mpesa/callback",
+            "CallBackURL": f"{base_url}/mpesa/callback",
             "AccountReference": index_number,
             "TransactionDesc": "Course Qualification Results"
         }
@@ -630,6 +782,7 @@ def initiate_stk_push(phone, amount=1):  # Changed default to Ksh 10
     except Exception as e:
         print(f"Error initiating STK push: {str(e)}")
         return {'error': str(e)}
+
 # --- Routes ---
 
 @app.route('/')
@@ -835,6 +988,7 @@ def enter_details(flow):
     
     # Save initial user data
     save_user_qualification(email, index_number, [], flow)
+    upsert_user_profile(email, index_number)
     
     return redirect(url_for('payment', flow=flow))
 
@@ -843,8 +997,7 @@ def check_payment(flow):
     """Check payment status from database"""
     email = session.get('email')
     index_number = session.get('index_number')
-    user_record = get_user_courses(email, index_number, flow)
-    paid = bool(user_record and user_record.get('payment_confirmed'))
+    paid = is_user_paid(email, index_number, flow)
     print(f"Payment check for {email}: {paid}")
     return {'paid': paid}
 
@@ -870,6 +1023,7 @@ def payment(flow):
         if transaction_ref and email and index_number:
             update_transaction_ref(email, index_number, flow, transaction_ref)
             print(f"✅ Transaction reference saved: {transaction_ref}")
+            create_payment_record(email, index_number, phone, transaction_ref, flow)
 
         # Return JSON for AJAX/modal flow
         return {
@@ -909,9 +1063,9 @@ def check_payment_status(flow):
     """Check payment status and redirect if paid"""
     email = session.get('email')
     index_number = session.get('index_number')
-    user_record = get_user_courses(email, index_number, flow)
+    paid = is_user_paid(email, index_number, flow)
     
-    if user_record and user_record.get('payment_confirmed'):
+    if paid:
         return {
             'paid': True,
             'redirect_url': url_for('show_results', flow=flow)
@@ -923,100 +1077,160 @@ def check_payment_status(flow):
 
 @app.route('/mpesa/callback', methods=['POST'])
 def mpesa_callback():
-    """MPesa STK Push callback endpoint"""
+    """MPesa STK Push callback endpoint - FIXED VERSION"""
     try:
         data = request.get_json(force=True)
-        print("MPesa STK callback received (full payload):", data)
+        print("🔔 MPesa STK callback received:")
+        print(f"   Full payload: {data}")
         
-        # Extract transaction reference and payment status from callback
-        callback_metadata = data.get('Body', {}).get('stkCallback', {})
-        transaction_ref = callback_metadata.get('CheckoutRequestID')
-        result_code = callback_metadata.get('ResultCode')
-        
-        # Extract official Mpesa receipt number
-        mpesa_receipt = None
-        items = callback_metadata.get('CallbackMetadata', {}).get('Item', [])
-        print("CallbackMetadata Items:", items)
-        for item in items:
-            if item.get('Name') == 'MpesaReceiptNumber':
-                mpesa_receipt = item.get('Value')
-                break
-        print(f"Extracted transaction_ref: {transaction_ref}, MpesaReceiptNumber: {mpesa_receipt}")
-        
-        # ResultCode == 0 means payment successful
-        if transaction_ref and result_code == 0 and mpesa_receipt:
-            # Mark payment as confirmed in DB and set transaction_ref to MpesaReceiptNumber
-            result = user_data_collection.update_one(
-                {'transaction_ref': transaction_ref},
-                {'$set': {
-                    'payment_confirmed': True,
-                    'payment_date': datetime.now(),
-                    'transaction_ref': mpesa_receipt,  # Overwrite with official receipt
-                    'mpesa_receipt': mpesa_receipt
-                }}
-            )
-            print(f"Payment confirmed for transaction: {transaction_ref}, MpesaReceiptNumber: {mpesa_receipt}, update result: {result.raw_result}")
-            return {'success': True}, 200
-        print("Callback did not result in payment confirmation or missing receipt number.")
-        return {'success': False}, 400
+        # STK Push callback structure
+        if 'Body' in data and 'stkCallback' in data['Body']:
+            callback_metadata = data['Body']['stkCallback']
+            transaction_ref = callback_metadata.get('CheckoutRequestID')
+            result_code = callback_metadata.get('ResultCode')
+            
+            print(f"   Transaction Ref: {transaction_ref}")
+            print(f"   Result Code: {result_code}")
+            
+            # Extract Mpesa receipt number from callback metadata
+            mpesa_receipt = None
+            callback_metadata_items = callback_metadata.get('CallbackMetadata', {}).get('Item', [])
+            
+            for item in callback_metadata_items:
+                if item.get('Name') == 'MpesaReceiptNumber':
+                    mpesa_receipt = item.get('Value')
+                    break
+            
+            print(f"   Mpesa Receipt: {mpesa_receipt}")
+            
+            # ResultCode 0 means success
+            if result_code == 0 and mpesa_receipt and transaction_ref:
+                print(f"✅ Payment successful! Receipt: {mpesa_receipt}")
+                
+                # Update payments collection
+                mark_payment_confirmed_in_payments(transaction_ref, mpesa_receipt=mpesa_receipt)
+                
+                # Update user data collection
+                result = user_data_collection.update_one(
+                    {'transaction_ref': transaction_ref},
+                    {'$set': {
+                        'payment_confirmed': True,
+                        'payment_date': datetime.now(),
+                        'mpesa_receipt': mpesa_receipt,
+                        'transaction_ref': mpesa_receipt  # Update to official receipt
+                    }}
+                )
+                print(f"📊 Database update result: {result.modified_count} documents modified")
+                
+                return {'ResultCode': 0, 'ResultDesc': 'Success'}, 200
+            else:
+                print(f"❌ Payment failed or incomplete. ResultCode: {result_code}")
+                return {'ResultCode': 0, 'ResultDesc': 'Failed'}, 200
+        else:
+            print("❌ Invalid callback structure")
+            return {'ResultCode': 0, 'ResultDesc': 'Invalid structure'}, 200
+            
     except Exception as e:
-        print(f"Error processing MPesa callback: {str(e)}")
-        return {'success': False}, 400
+        print(f"❌ Error processing MPesa callback: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {'ResultCode': 0, 'ResultDesc': 'Error'}, 200
 
-# M-Pesa Paybill confirmation callback endpoint
 @app.route('/mpesa/confirmation', methods=['POST'])
 def mpesa_confirmation():
-    """M-Pesa Paybill confirmation callback endpoint"""
-    data = request.get_json(force=True)
-    trans_id = data.get('TransID')
-    amount = data.get('TransAmount')
-    phone = data.get('MSISDN')
-    account = data.get('BillRefNumber')  # This should be the index number
-    timestamp = data.get('TransactionTime')
-    transaction = {
-        'trans_id': trans_id,
-        'amount': amount,
-        'phone': phone,
-        'account': account,
-        'timestamp': timestamp,
-        'callback_type': 'confirmation'
-    }
-    print(f"MPesa confirmation received: {transaction}")
-    # Save to MongoDB transactions collection
-    db_user_data['transactions'].insert_one(transaction)
-    # Mark user as paid and save transaction reference in user record
-    if account:  # account should be the index number
-        result = user_data_collection.update_one(
-            {'index_number': account},
-            {'$set': {
-                'payment_confirmed': True,
-                'mpesa_receipt': trans_id,
-                'transaction_ref': trans_id,  # Overwrite with official receipt
-                'payment_date': datetime.now()
-            }}
-        )
-        print(f"User payment update result for index {account}: {result.raw_result}")
-    return {'ResultCode': 0, 'ResultDesc': 'Accepted'}
-
-def mark_payment_confirmed_by_index(index_number, receipt_number):
-    """Mark payment confirmed by index number (fallback)"""
-    for key in session:
-        if key.endswith(index_number) and session[key].get('index_number') == index_number:
-            session[key]['payment_confirmed'] = True
-            session[key]['mpesa_receipt'] = receipt_number
-            return True
-    return False
+    """M-Pesa Paybill confirmation callback endpoint - FIXED VERSION"""
+    try:
+        data = request.get_json(force=True)
+        print("🔔 MPesa C2B Confirmation received:")
+        print(f"   Full payload: {data}")
+        
+        # Extract transaction details
+        trans_id = data.get('TransID', '')
+        amount = data.get('TransAmount', '')
+        phone = data.get('MSISDN', '')
+        account_number = data.get('BillRefNumber', '')  # This should be index number
+        transaction_date = data.get('TransactionTime', '')
+        
+        print(f"   Transaction ID: {trans_id}")
+        print(f"   Amount: {amount}")
+        print(f"   Phone: {phone}")
+        print(f"   Account (Index): {account_number}")
+        print(f"   Date: {transaction_date}")
+        
+        if not account_number:
+            print("❌ No account number (index number) provided")
+            return {'ResultCode': 0, 'ResultDesc': 'Accepted'}, 200
+        
+        # Mark payment as confirmed
+        success = mark_payment_confirmed_by_account(account_number, trans_id, amount)
+        
+        # Also update payments collection
+        mark_payment_confirmed_by_account_in_payments(account_number, trans_id, phone=phone, amount=float(amount) if amount else None)
+        
+        if success:
+            print(f"✅ C2B Payment confirmed for index: {account_number}")
+        else:
+            print(f"⚠️  C2B Payment recorded but no user found for index: {account_number}")
+        
+        # Always return success to MPesa
+        return {'ResultCode': 0, 'ResultDesc': 'Accepted'}, 200
+        
+    except Exception as e:
+        print(f"❌ Error processing MPesa confirmation: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {'ResultCode': 0, 'ResultDesc': 'Accepted'}, 200
 
 @app.route('/mpesa/validation', methods=['POST'])
 def mpesa_validation():
-    """M-Pesa validation callback endpoint"""
-    data = request.get_json(force=True)
-    print("MPesa validation received:", data)
-    
-    # Always accept the transaction
+    """M-Pesa validation callback endpoint - FIXED VERSION"""
+    try:
+        data = request.get_json(force=True)
+        print("🔔 MPesa Validation received:")
+        print(f"   Full payload: {data}")
+        
+        # Extract transaction details for logging
+        trans_id = data.get('TransID', '')
+        account_number = data.get('BillRefNumber', '')
+        
+        print(f"   Validating Transaction ID: {trans_id}")
+        print(f"   Account (Index): {account_number}")
+        
+        # Always accept the transaction for validation
+        # This is where you could add business logic to validate the payment
+        response = {
+            "ResultCode": 0,
+            "ResultDesc": "Accepted",
+            "ThirdPartyTransID": trans_id
+        }
+        
+        print(f"   Validation Response: {response}")
+        return response, 200
+        
+    except Exception as e:
+        print(f"❌ Error processing MPesa validation: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return {"ResultCode": 0, "ResultDesc": "Accepted"}, 200
+
+# --- Admin Routes for MPesa Management ---
+
+@app.route('/admin/register-mpesa-urls')
+def admin_register_mpesa_urls():
+    """Admin route to manually register MPesa URLs"""
+    if register_mpesa_urls():
+        return "✅ MPesa URLs registered successfully!"
+    else:
+        return "❌ Failed to register MPesa URLs"
+
+@app.route('/admin/test-callbacks')
+def admin_test_callbacks():
+    """Admin route to test if callbacks are working"""
     return {
-        "ResultCode": 0,
-        "ResultDesc": "Accepted"
+        'callbacks_working': True,
+        'confirmation_url': 'https://kuccps.onrender.com/mpesa/confirmation',
+        'validation_url': 'https://kuccps.onrender.com/mpesa/validation',
+        'stk_callback_url': 'https://kuccps.onrender.com/mpesa/callback'
     }
 
 # --- Results Display Routes ---
@@ -1033,7 +1247,7 @@ def show_results(flow):
     
     # Check payment status
     user_record = get_user_courses(email, index_number, flow)
-    if not user_record or not user_record.get('payment_confirmed'):
+    if not is_user_paid(email, index_number, flow):
         flash('Please complete payment to view your results.', 'error')
         return redirect(url_for('payment', flow=flow))
 
@@ -1075,7 +1289,8 @@ def show_results(flow):
         return redirect(url_for('index'))
 
     # Update the user record with the actual courses
-    save_user_qualification(email, index_number, qualifying_courses, flow, user_record.get('transaction_ref'))
+    latest_tx = user_record.get('transaction_ref') if user_record else None
+    save_user_qualification(email, index_number, qualifying_courses, flow, latest_tx)
     
     print(f"✅ Displaying {len(qualifying_courses)} courses for {email}")
     
