@@ -1,0 +1,86 @@
+{% extends "base.html" %}
+
+{% block title %}KMTC Results{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1 class="text-primary">KMTC Qualification Results</h1>
+
+    {% if courses %}
+    <div class="alert alert-success" role="alert">
+        You qualify for {{ courses|length }} KMTC courses!
+    </div>
+
+    <div class="row">
+        {% for course in courses %}
+        <div class="col-md-6 mb-3">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5 class="card-title">{{ course.programme_name }}</h5>
+                    <h6 class="card-subtitle mb-2 text-muted">{{ course.institution_name }}</h6>
+                    <p class="card-text">
+                        <strong>Programme Code:</strong> {{ course.programme_code }}<br>
+                        {% if course.minimum_grade and course.minimum_grade.mean_grade %}
+                        <strong>Minimum Mean Grade:</strong> {{ course.minimum_grade.mean_grade }}<br>
+                        {% endif %}
+                        {% if course.minimum_subject_requirements %}
+                        <strong>Subject Requirements:</strong>
+                        {% for subject, grade in course.minimum_subject_requirements.items() %}
+                        {{ subject }}: {{ grade }}{% if not loop.last %}, {% endif %}
+                        {% endfor %}
+                        {% endif %}
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-warning" role="alert">
+        You do not qualify for any KMTC courses based on your grades and mean grade.
+    </div>
+    {% endif %}
+
+    <div class="mt-4">
+        <h3>Your Entered Grades</h3>
+        <div class="row">
+            {% for code, grade in user_grades.items() %}
+            <div class="col-md-3 mb-2">
+                <div class="card">
+                    <div class="card-body py-2">
+                        <strong>{{ code }}</strong>: {{ grade }}
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+        </div>
+
+        <h3 class="mt-3">Your Mean Grade</h3>
+        <div class="alert alert-info">
+            <strong>Overall Grade:</strong> {{ user_mean_grade }}
+        </div>
+    </div>
+
+    <div class="mt-4">
+        <a href="/kmtc" class="btn btn-primary">Try Again</a>
+        <a href="/" class="btn btn-secondary">Back to Home</a>
+
+        {% if courses %}
+        <button onclick="window.print()" class="btn btn-info">Print Results</button>
+        <!-- Payment Section -->
+        <form action="/payment" method="post" class="mt-3">
+            <input type="hidden" name="email" value="{{ email }}">
+            <input type="hidden" name="index_number" value="{{ index_number }}">
+            <input type="hidden" name="level" value="kmtc">
+            <button type="submit" class="btn btn-success">Proceed to Payment (M-Pesa)</button>
+        </form>
+        <form action="/retrieve-courses" method="post" class="mt-2">
+            <input type="hidden" name="email" value="{{ email }}">
+            <input type="hidden" name="index_number" value="{{ index_number }}">
+            <input type="hidden" name="level" value="kmtc">
+            <button type="submit" class="btn btn-warning">Already Made Payment?</button>
+        </form>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

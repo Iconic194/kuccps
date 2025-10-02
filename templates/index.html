@@ -1,0 +1,39 @@
+{% extends "./base.html" %} {% block title %}Kuccps | Courses {% endblock %} 
+{% block hero %}
+<!-- Hero Section -->
+<div class="hero">
+    <h1 class="display-5 fw-bold">Your Gateway to University and College Success</h1>
+    <p class="lead">Explore your academic journey with confidence.</p>
+</div>
+{% endblock %}
+
+{% block course_buttons %}
+<!-- Course Buttons -->
+<div class="container text-center mb-4">
+    <div class="row g-3">
+        <div class="col-md-4">
+            <a href="/degree" class="btn btn-primary w-100">Degree</a>
+        </div>
+        <div class="col-md-4">
+            <a href="/diploma" class="btn btn-secondary w-100">Diploma</a>
+        </div>
+        <div class="col-md-4">
+            <a href="/certificate" class="btn btn-success w-100">Certificate</a>
+        </div>
+    <div class="col-md-4">
+        <a href="https://www.coursera.org/courses?query=free" target="_blank" class="btn btn-info w-100">Short Courses
+            (Free)</a>
+    </div>
+        <div class="col-md-4">
+            <a href="/artisan" class="btn btn-warning w-100">Artisan</a>
+        </div>
+        <div class="col-md-4">
+            <a href="/kmtc" class="btn btn-danger w-100">KMTC</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Homepage specific content can go here -->
+{% endblock %}
