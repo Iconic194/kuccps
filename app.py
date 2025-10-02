@@ -1,4 +1,3 @@
-# --- Imports ---
 import os
 import base64
 from datetime import datetime
@@ -69,18 +68,16 @@ MONGODB_URI = "mongodb+srv://iconichean:1Loye8PM3YwlV5h4@cluster0.meufk73.mongod
 # Initialize database variables
 db = None
 db_user_data = None
-db_payments = None
 db_diploma = None
 db_kmtc = None
 db_certificate = None
 db_artisan = None
 user_data_collection = None
-payments_collection = None
 database_connected = False
 
 def initialize_database():
     """Initialize database connections with error handling"""
-    global db, db_user_data, db_payments, db_diploma, db_kmtc, db_certificate, db_artisan, user_data_collection, payments_collection, database_connected
+    global db, db_user_data, db_diploma, db_kmtc, db_certificate, db_artisan, user_data_collection, database_connected
     
     try:
         client = MongoClient(MONGODB_URI, serverSelectionTimeoutMS=5000)
@@ -92,9 +89,7 @@ def initialize_database():
         # Initialize databases
         db = client['Degree']
         db_user_data = client['user_data']
-        db_payments = client['payments']
         user_data_collection = db_user_data['user_courses']
-        payments_collection = db_payments['payment_transactions']
         db_diploma = client['diploma']
         db_kmtc = client['kmtc']
         db_certificate = client['certificate']
@@ -401,76 +396,6 @@ def get_qualifying_artisan_courses(user_grades, user_mean_grade):
     return qualifying_courses
 
 # --- Database Operations ---
-
-def save_user_data(email, index_number, user_grades, level, mean_grade=None, cluster_points=None):
-    """Save user data to database"""
-    if not database_connected:
-        print("⚠️  Database not available - skipping save user data")
-        return
-        
-    user_record = {
-        'email': email,
-        'index_number': index_number,
-        'user_grades': user_grades,
-        'level': level,
-        'mean_grade': mean_grade,
-        'cluster_points': cluster_points,
-        'created_at': datetime.now()
-    }
-    
-    try:
-        user_data_collection.update_one(
-            {'email': email, 'index_number': index_number, 'level': level},
-            {'$set': user_record},
-            upsert=True
-        )
-        print(f"✅ Successfully saved user data for {email}")
-    except Exception as e:
-        print(f"❌ Error saving user data: {str(e)}")
-
-def save_payment_transaction(email, index_number, phone, transaction_ref, amount=1, status='pending'):
-    """Save payment transaction to database"""
-    if not database_connected:
-        print("⚠️  Database not available - skipping save payment transaction")
-        return
-        
-    payment_record = {
-        'email': email,
-        'index_number': index_number,
-        'phone': phone,
-        'transaction_ref': transaction_ref,
-        'amount': amount,
-        'status': status,
-        'created_at': datetime.now()
-    }
-    
-    try:
-        payments_collection.insert_one(payment_record)
-        print(f"✅ Successfully saved payment transaction for {email}")
-    except Exception as e:
-        print(f"❌ Error saving payment transaction: {str(e)}")
-
-def update_payment_status(transaction_ref, status, mpesa_receipt=None):
-    """Update payment status in database"""
-    if not database_connected:
-        print("⚠️  Database not available - skipping payment status update")
-        return
-        
-    try:
-        update_data = {
-            'status': status,
-            'updated_at': datetime.now()
-        }
-        if mpesa_receipt:
-            update_data['mpesa_receipt'] = mpesa_receipt
-            
-        payments_collection.update_one(
-            {'transaction_ref': transaction_ref},
-            {'$set': update_data}
-        )
-        print(f"✅ Payment status updated for {transaction_ref}: {status}")
-    except Exception as e:
-        print(f"❌ Error updating payment status: {str(e)}")
 
 def save_user_qualification(email, index_number, courses, level, transaction_ref=None):
     """Save user qualification data to database"""
@@ -908,17 +833,7 @@ def enter_details(flow):
     session['index_number'] = index_number
     session['current_flow'] = flow
     
-    # Save user data to database
-    if flow == 'degree':
-        user_grades = session.get('degree_grades', {})
-        cluster_points = session.get('degree_cluster_points', {})
-        save_user_data(email, index_number, user_grades, flow, cluster_points=cluster_points)
-    else:
-        user_grades = session.get(f'{flow}_grades', {})
-        mean_grade = session.get(f'{flow}_mean_grade', '')
-        save_user_data(email, index_number, user_grades, flow, mean_grade=mean_grade)
-    
-    # Save initial user qualification data
+    # Save initial user data
     save_user_qualification(email, index_number, [], flow)
     
     return redirect(url_for('payment', flow=flow))
@@ -954,8 +869,6 @@ def payment(flow):
         
         if transaction_ref and email and index_number:
             update_transaction_ref(email, index_number, flow, transaction_ref)
-            # Save payment transaction to payments database
-            save_payment_transaction(email, index_number, phone, transaction_ref, status='pending')
             print(f"✅ Transaction reference saved: {transaction_ref}")
 
         # Return JSON for AJAX/modal flow
@@ -1042,14 +955,9 @@ def mpesa_callback():
                     'mpesa_receipt': mpesa_receipt
                 }}
             )
-            # Update payment transaction status
-            update_payment_status(transaction_ref, 'completed', mpesa_receipt)
             print(f"Payment confirmed for transaction: {transaction_ref}, MpesaReceiptNumber: {mpesa_receipt}, update result: {result.raw_result}")
             return {'success': True}, 200
-        else:
-            # Update payment transaction status to failed
-            update_payment_status(transaction_ref, 'failed')
-            print("Callback did not result in payment confirmation or missing receipt number.")
+        print("Callback did not result in payment confirmation or missing receipt number.")
         return {'success': False}, 400
     except Exception as e:
         print(f"Error processing MPesa callback: {str(e)}")
@@ -1075,7 +983,7 @@ def mpesa_confirmation():
     }
     print(f"MPesa confirmation received: {transaction}")
     # Save to MongoDB transactions collection
-    db_payments['transactions'].insert_one(transaction)
+    db_user_data['transactions'].insert_one(transaction)
     # Mark user as paid and save transaction reference in user record
     if account:  # account should be the index number
         result = user_data_collection.update_one(
@@ -1087,8 +995,6 @@ def mpesa_confirmation():
                 'payment_date': datetime.now()
             }}
         )
-        # Update payment transaction status
-        update_payment_status(trans_id, 'completed', trans_id)
         print(f"User payment update result for index {account}: {result.raw_result}")
     return {'ResultCode': 0, 'ResultDesc': 'Accepted'}
 
@@ -1184,4 +1090,4 @@ def show_results(flow):
 
 # --- Main Application Entry Point ---
 if __name__ == "__main__":
-    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 5000)))
+    app.run(host='0.0.0.0', port=int(os.environ.get("PORT", 8080)))
