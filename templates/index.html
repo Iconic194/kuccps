@@ -1,7 +1,11 @@
+<<<<<<< HEAD
 {% extends "./base.html" %}
 
 {% block title %}Kuccps | Courses{% endblock %}
 
+=======
+{% extends "./base.html" %} {% block title %}Kuccps | Courses {% endblock %} 
+>>>>>>> c7d395a338fd0b5e83c222dca6955d1f8d0fd311
 {% block hero %}
 <!-- Hero Section -->
 <div class="hero">
@@ -11,6 +15,7 @@
 {% endblock %}
 
 {% block course_buttons %}
+<<<<<<< HEAD
 <!-- Course Buttons Section -->
 <section class="container my-4">
     <h2 class="text-center mb-4 fw-semibold">Choose a Pathway</h2>
@@ -43,4 +48,34 @@
 <div class="container my-5">
     <p class="text-center text-muted">Select a course category above to begin your application or learn more.</p>
 </div>
+=======
+<!-- Course Buttons -->
+<div class="container text-center mb-4">
+    <div class="row g-3">
+        <div class="col-md-4">
+            <a href="/degree" class="btn btn-primary w-100">Degree</a>
+        </div>
+        <div class="col-md-4">
+            <a href="/diploma" class="btn btn-secondary w-100">Diploma</a>
+        </div>
+        <div class="col-md-4">
+            <a href="/certificate" class="btn btn-success w-100">Certificate</a>
+        </div>
+    <div class="col-md-4">
+        <a href="https://www.coursera.org/courses?query=free" target="_blank" class="btn btn-info w-100">Short Courses
+            (Free)</a>
+    </div>
+        <div class="col-md-4">
+            <a href="/artisan" class="btn btn-warning w-100">Artisan</a>
+        </div>
+        <div class="col-md-4">
+            <a href="/kmtc" class="btn btn-danger w-100">KMTC</a>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block content %}
+<!-- Homepage specific content can go here -->
+>>>>>>> c7d395a338fd0b5e83c222dca6955d1f8d0fd311
 {% endblock %}
