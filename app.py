@@ -16,11 +16,9 @@ app = Flask(__name__)
 app.secret_key = 'kuccps_super_secret_key_2025'
 app.config['SESSION_TYPE'] = 'filesystem'
 
-<<<<<<< HEAD
 
-=======
 # --- Constants ---
->>>>>>> c7d395a338fd0b5e83c222dca6955d1f8d0fd311
+
 SUBJECTS = {
     'mathematics': 'MAT', 'english': 'ENG', 'kiswahili': 'KIS', 'chemistry': 'CHE',
     'biology': 'BIO', 'physics': 'PHY', 'geography': 'GEO', 'history': 'HAG',
