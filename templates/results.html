@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="container mt-5">
+    <h1 class="text-primary">Qualification Results</h1>
+
+    {% if courses %}
+    <p>You qualify for {{ courses|length }} courses:</p>
+
+    <div class="row">
+        {% for course in courses %}
+        <div class="col-md-6 mb-3">
+            <div class="card">
+                <div class="card-body">
+                    <h5 class="card-title">{{ course.programme_name }}</h5>
+                    <h6 class="card-subtitle mb-2 text-muted">{{ course.institution_name }}</h6>
+                    <p class="card-text">
+                        Programme Code: {{ course.programme_code }}<br>
+                        Cut-off Points: {{ course.get('cut_off_points', 'N/A') }}<br>
+                        Cluster: {{ course.cluster }}
+                    </p>
+                </div>
+            </div>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <div class="alert alert-warning" role="alert">
+        You do not qualify for any courses based on your grades and cluster points.
+    </div>
+    {% endif %}
+
+    <div class="mt-4">
+        <h3>Your Entered Grades</h3>
+        <ul class="list-group">
+            {% for code, grade in user_grades.items() %}
+            <li class="list-group-item">{{ subjects[code] }}: {{ grade }}</li>
+            {% endfor %}
+        </ul>
+
+        <h3 class="mt-3">Your Cluster Points</h3>
+        <ul class="list-group">
+            {% for cluster, points in user_cluster_points.items() %}
+            {% if points > 0 %}
+            <li class="list-group-item">{{ cluster }}: {{ points }}</li>
+            {% endif %}
+            {% endfor %}
+        </ul>
+    </div>
+
+    <div class="mt-4">
+        <a href="/degree" class="btn btn-primary">Try Again</a>
+        <a href="/" class="btn btn-secondary">Back to Home</a>
+    </div>
+</div>
+{% endblock %}

@@ -1,0 +1,46 @@
+{% extends "./base.html" %}
+
+{% block title %}Kuccps | Courses{% endblock %}
+
+{% block hero %}
+<!-- Hero Section -->
+<div class="hero">
+    <h1 class="display-5 fw-bold">Your Gateway to University and College Success</h1>
+    <p class="lead">Explore your academic journey with confidence.</p>
+</div>
+{% endblock %}
+
+{% block course_buttons %}
+<!-- Course Buttons Section -->
+<section class="container my-4">
+    <h2 class="text-center mb-4 fw-semibold">Choose a Pathway</h2>
+    <div class="row g-3 justify-content-center">
+        <div class="col-6 col-md-4 col-lg-3">
+            <a href="/degree" class="btn btn-primary w-100 py-3 shadow-sm">🎓 Degree</a>
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+            <a href="/diploma" class="btn btn-secondary w-100 py-3 shadow-sm">📘 Diploma</a>
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+            <a href="/certificate" class="btn btn-success w-100 py-3 shadow-sm">📄 Certificate</a>
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+            <a href="https://www.coursera.org/courses?query=free" target="_blank"
+                class="btn btn-info w-100 py-3 shadow-sm">📚 Short Courses</a>
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+            <a href="/artisan" class="btn btn-warning w-100 py-3 shadow-sm">🛠️ Artisan</a>
+        </div>
+        <div class="col-6 col-md-4 col-lg-3">
+            <a href="/kmtc" class="btn btn-danger w-100 py-3 shadow-sm">🏥 KMTC</a>
+        </div>
+    </div>
+</section>
+{% endblock %}
+
+{% block content %}
+
+<div class="container my-5">
+    <p class="text-center text-muted">Select a course category above to begin your application or learn more.</p>
+</div>
+{% endblock %}

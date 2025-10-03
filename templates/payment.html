@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+
+{% block title %}Payment Required{% endblock %}
+
+{% block content %}
+<div class="container mt-5">
+    <!-- Payment Modal Trigger Button (hidden, auto-clicked) -->
+    <button type="button" id="openPaymentModal" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#paymentModal" style="display:none;">Open Payment Modal</button>
+
+    <!-- Payment Modal -->
+    <div class="modal fade" id="paymentModal" tabindex="-1" aria-labelledby="paymentModalLabel" aria-hidden="true">
+      <div class="modal-dialog">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title" id="paymentModalLabel">Pay 1 Bob to View Your Qualified Courses</h5>
+          </div>
+          <div class="modal-body">
+            <form id="payment-form">
+              <div id="form-section">
+                <p>To proceed, please pay KES 1 via MPesa. Enter your phone number and click Pay.</p>
+                <div class="mb-3">
+                  <label for="phone" class="form-label">MPesa Phone Number</label>
+                  <input type="text" class="form-control" id="phone" name="phone" required pattern="0[17][0-9]{8}">
+                </div>
+                <button type="submit" class="btn btn-success">Pay 1 Bob</button>
+              </div>
+              <div id="wait-section" style="display:none; text-align:center;">
+                <div class="spinner-border text-primary" role="status">
+                  <span class="visually-hidden">Loading...</span>
+                </div>
+                <h4 class="mt-3">Please wait while processing your payment...</h4>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+    </div>
+</div>
+<script>
+// Auto-open the modal on page load
+window.onload = function() {
+    document.getElementById('openPaymentModal').click();
+};
+
+document.getElementById('payment-form').addEventListener('submit', function(e) {
+  e.preventDefault();
+  var phone = document.getElementById('phone').value;
+  var flow = "{{ flow }}";
+  document.getElementById('form-section').style.display = 'none';
+  document.getElementById('wait-section').style.display = 'block';
+  fetch(`/payment/${flow}`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+    body: `phone=${encodeURIComponent(phone)}`
+  })
+  .then(response => response.json())
+  .then(data => {
+    if (data.ResponseCode === '0' || data.paid) {
+      // Start polling the database for payment confirmation
+      pollPaymentConfirmed(flow);
+    } else {
+      let errorMsg = data.error || 'Failed to initiate payment. Try again.';
+      alert(errorMsg);
+      window.location.reload();
+    }
+  })
+  .catch(() => {
+    alert('Failed to initiate payment. Try again.');
+    window.location.reload();
+  });
+});
+
+function pollPaymentConfirmed(flow) {
+  fetch(`/check-payment/${flow}`)
+    .then(response => response.json())
+    .then(data => {
+      if (data.paid) {
+        window.location.href = `/results/${flow}`;
+      } else {
+        setTimeout(function() { pollPaymentConfirmed(flow); }, 3000);
+      }
+    })
+    .catch(() => setTimeout(function() { pollPaymentConfirmed(flow); }, 3000));
+}
+</script>
+{% endblock %}
